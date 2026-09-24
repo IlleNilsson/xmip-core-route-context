@@ -8,14 +8,14 @@
 //! compares — text as it is, a boolean as `true` or `false`, a number as it
 //! prints. No prefix is context too, which is what routing has always read; the
 //! explicit spelling exists for the two readings the implicit one cannot give.
-//! A `Null` reads as nothing promoted, so a filter over it declines with its
-//! reason rather than matching empty text. A `Binary` value is refused with a
-//! reason, because there is no reading of arbitrary bytes as text that is right
-//! often enough to be worth being wrong the rest of the time. ADR-0046.
+//! Both spellings read through `route::routable`, so they agree: a key the
+//! Context does not hold and a `Null` are absent — nothing promoted, so a
+//! filter over it declines with its reason, `exists` fails, and empty text
+//! does not match. A `Binary` value is refused with a reason, because bytes
+//! are not text. ADR-0046, amended 2026-09-24.
 //!
 //! A route technology does not decide anything: it reads.
 
-use context::ContextValue;
 use message::Message;
 use route::{Source, SourceError};
 
@@ -36,25 +36,15 @@ impl Source for ContextSource {
             ));
         }
 
-        match message.context().get(name) {
-            None | Some(ContextValue::Null) => Ok(None),
-            Some(ContextValue::Binary(bytes)) => Err(SourceError::new(
-                route::CONTEXT,
-                name,
-                format!(
-                    "{name} holds {} bytes, and bytes are not routable as text",
-                    bytes.len()
-                ),
-            )),
-            Some(value) => Ok(route::text_of(value)),
-        }
+        route::routable(name, message.context().get(name))
+            .map_err(|reason| SourceError::new(route::CONTEXT, name, reason))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use context::MessageContext;
+    use context::{ContextValue, MessageContext};
     use message::MessageTreatment;
     use route::{Predicate, Value};
     use xcore::MessageId;
@@ -124,5 +114,41 @@ mod tests {
                 .test(&promoted)
                 .passed()
         );
+    }
+
+    #[test]
+    fn both_spellings_agree_on_present_missing_null_and_bytes() {
+        let sources: [&dyn Source; 1] = [&ContextSource];
+        let spellings: [(&[&dyn Source], &str); 3] =
+            [(&sources, ""), (&sources, "context:"), (&[], "context:")];
+
+        for (loaded, prefix) in spellings {
+            let named = |key: &str| format!("{prefix}{key}");
+            let (present, missing, null) = (named("Amount"), named("Region"), named("Note"));
+            let promoted = route::promote(
+                &message(),
+                loaded,
+                &[present.as_str(), missing.as_str(), null.as_str()],
+            )
+            .expect("readable");
+
+            assert_eq!(promoted.get(&present), Some("1500"), "{present}");
+            assert_eq!(promoted.get(&missing), None, "{missing}");
+            assert_eq!(promoted.get(&null), None, "{null}");
+            assert!(Predicate::exists(present.clone()).test(&promoted).passed());
+            assert!(!Predicate::exists(missing.clone()).test(&promoted).passed());
+            assert!(!Predicate::exists(null.clone()).test(&promoted).passed());
+            assert!(
+                !Predicate::equals(null.clone(), Value::Text(String::new()))
+                    .test(&promoted)
+                    .passed(),
+                "{null} is absent, not empty text"
+            );
+
+            let refused =
+                route::promote(&message(), loaded, &[named("Blob").as_str()]).expect_err("bytes");
+            assert_eq!(refused.technology, "context");
+            assert!(refused.reason.contains("Blob holds 3 bytes"));
+        }
     }
 }
