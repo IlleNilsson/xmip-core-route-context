@@ -7,7 +7,7 @@ version = "0.1.0"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/IlleNilsson/xmip-core-route-context"
-description = "Context route technology: `context:<key>` reads a Message's typed context value as the text a filter compares — null promotes nothing, bytes are refused. A xmip-core-route technology."
+description = "Context route technology: `context:<key>` reads a Message's typed context value as the text a filter compares, the same reading a bare `<key>` gets — a missing key and a null are absent, bytes are refused. A xmip-core-route technology."
 publish = false
 
 [lib]
