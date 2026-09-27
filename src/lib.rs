@@ -48,19 +48,20 @@ impl Reading for Key {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use context::{ContextValue, MessageContext};
+    use context::MessageContext;
     use message::MessageTreatment;
     use route::{Gathering, Promoted, SourceError};
     use xcore::MessageId;
+    use xcore::ScalarValue;
 
     fn message() -> Message {
         let context = MessageContext::new()
-            .with_value("MessageType", ContextValue::Text("Order".into()))
-            .with_value("Amount", ContextValue::Integer(1500))
-            .with_value("Urgent", ContextValue::Bool(true))
-            .with_value("Weight", ContextValue::Decimal(2.5))
-            .with_value("Note", ContextValue::Null)
-            .with_value("Blob", ContextValue::Binary(vec![0, 1, 2]));
+            .with_value("MessageType", ScalarValue::Text("Order".into()))
+            .with_value("Amount", ScalarValue::Integer(1500))
+            .with_value("Urgent", ScalarValue::Bool(true))
+            .with_value("Weight", ScalarValue::Decimal(2.5))
+            .with_value("Note", ScalarValue::Null)
+            .with_value("Blob", ScalarValue::Binary(vec![0, 1, 2]));
         Message::received(
             MessageId::new(1),
             Vec::new(),
