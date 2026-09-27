@@ -46,7 +46,6 @@ mod tests {
     use super::*;
     use context::{ContextValue, MessageContext};
     use message::MessageTreatment;
-    use route::{Predicate, Value};
     use xcore::MessageId;
 
     fn message() -> Message {
@@ -110,9 +109,10 @@ mod tests {
         assert_eq!(promoted.get("context:Note"), None);
         assert_eq!(promoted.get("MessageType"), Some("Order"));
         assert!(
-            Predicate::greater_than("context:Amount", Value::Integer(1000))
-                .test(&promoted)
-                .passed()
+            path::expression::Expression::parse("context:Amount > 1000")
+                .expect("compiles")
+                .evaluate(&promoted)
+                .holds()
         );
     }
 
@@ -135,13 +135,17 @@ mod tests {
             assert_eq!(promoted.get(&present), Some("1500"), "{present}");
             assert_eq!(promoted.get(&missing), None, "{missing}");
             assert_eq!(promoted.get(&null), None, "{null}");
-            assert!(Predicate::exists(present.clone()).test(&promoted).passed());
-            assert!(!Predicate::exists(missing.clone()).test(&promoted).passed());
-            assert!(!Predicate::exists(null.clone()).test(&promoted).passed());
+            let holds = |text: &str| {
+                path::expression::Expression::parse(text)
+                    .expect("compiles")
+                    .evaluate(&promoted)
+                    .holds()
+            };
+            assert!(holds(&format!("exists {present}")));
+            assert!(!holds(&format!("exists {missing}")));
+            assert!(!holds(&format!("exists {null}")));
             assert!(
-                !Predicate::equals(null.clone(), Value::Text(String::new()))
-                    .test(&promoted)
-                    .passed(),
+                !holds(&format!("{null} = ''")),
                 "{null} is absent, not empty text"
             );
 
