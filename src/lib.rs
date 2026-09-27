@@ -17,7 +17,8 @@
 //! A route technology does not decide anything: it reads.
 
 use message::Message;
-use route::{Source, SourceError};
+use path::Content;
+use route::{Reading, Source};
 
 /// Reads `context:<key>` as the typed context value rendered as text.
 pub struct ContextSource;
@@ -27,17 +28,20 @@ impl Source for ContextSource {
         route::CONTEXT
     }
 
-    fn read(&self, message: &Message, name: &str) -> Result<Option<String>, SourceError> {
+    fn compile(&self, name: &str) -> Result<Box<dyn Reading>, String> {
         if name.is_empty() {
-            return Err(SourceError::new(
-                route::CONTEXT,
-                name,
-                "a context key is needed after the prefix",
-            ));
+            return Err("a context key is needed after the prefix".to_string());
         }
+        Ok(Box::new(Key(name.to_string())))
+    }
+}
 
-        route::routable(name, message.context().get(name))
-            .map_err(|reason| SourceError::new(route::CONTEXT, name, reason))
+/// One context key.
+struct Key(String);
+
+impl Reading for Key {
+    fn read(&self, message: &Message, _: Option<&Content<'_>>) -> Result<Option<String>, String> {
+        route::routable(&self.0, message.context().get(&self.0))
     }
 }
 
@@ -46,6 +50,7 @@ mod tests {
     use super::*;
     use context::{ContextValue, MessageContext};
     use message::MessageTreatment;
+    use route::{Gathering, Promoted, SourceError};
     use xcore::MessageId;
 
     fn message() -> Message {
@@ -64,8 +69,14 @@ mod tests {
         )
     }
 
+    fn promote(sources: &[&dyn Source], properties: &[&str]) -> Result<Promoted, SourceError> {
+        Gathering::new(sources, properties).promote(&message())
+    }
+
     fn read(name: &str) -> Result<Option<String>, SourceError> {
-        ContextSource.read(&message(), name)
+        let property = format!("context:{name}");
+        let promoted = promote(&[&ContextSource], &[property.as_str()])?;
+        Ok(promoted.get(&property).map(str::to_string))
     }
 
     #[test]
@@ -98,12 +109,8 @@ mod tests {
         assert_eq!(ContextSource.technology(), "context");
 
         let sources: [&dyn Source; 1] = [&ContextSource];
-        let promoted = route::promote(
-            &message(),
-            &sources,
-            &["context:Amount", "context:Note", "MessageType"],
-        )
-        .expect("readable");
+        let promoted = promote(&sources, &["context:Amount", "context:Note", "MessageType"])
+            .expect("readable");
 
         assert_eq!(promoted.get("context:Amount"), Some("1500"));
         assert_eq!(promoted.get("context:Note"), None);
@@ -125,12 +132,8 @@ mod tests {
         for (loaded, prefix) in spellings {
             let named = |key: &str| format!("{prefix}{key}");
             let (present, missing, null) = (named("Amount"), named("Region"), named("Note"));
-            let promoted = route::promote(
-                &message(),
-                loaded,
-                &[present.as_str(), missing.as_str(), null.as_str()],
-            )
-            .expect("readable");
+            let promoted = promote(loaded, &[present.as_str(), missing.as_str(), null.as_str()])
+                .expect("readable");
 
             assert_eq!(promoted.get(&present), Some("1500"), "{present}");
             assert_eq!(promoted.get(&missing), None, "{missing}");
@@ -149,8 +152,7 @@ mod tests {
                 "{null} is absent, not empty text"
             );
 
-            let refused =
-                route::promote(&message(), loaded, &[named("Blob").as_str()]).expect_err("bytes");
+            let refused = promote(loaded, &[named("Blob").as_str()]).expect_err("bytes");
             assert_eq!(refused.technology, "context");
             assert!(refused.reason.contains("Blob holds 3 bytes"));
         }
