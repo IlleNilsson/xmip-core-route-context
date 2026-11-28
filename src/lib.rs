@@ -117,7 +117,7 @@ mod tests {
         assert_eq!(promoted.get("context:Note"), None);
         assert_eq!(promoted.get("MessageType"), Some("Order"));
         assert!(
-            path::expression::Expression::parse("context:Amount > 1000")
+            expression::Expression::parse("context:Amount > 1000")
                 .expect("compiles")
                 .evaluate(&promoted)
                 .holds()
@@ -140,7 +140,7 @@ mod tests {
             assert_eq!(promoted.get(&missing), None, "{missing}");
             assert_eq!(promoted.get(&null), None, "{null}");
             let holds = |text: &str| {
-                path::expression::Expression::parse(text)
+                expression::Expression::parse(text)
                     .expect("compiles")
                     .evaluate(&promoted)
                     .holds()
